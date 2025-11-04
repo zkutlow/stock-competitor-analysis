@@ -549,8 +549,19 @@ def main():
                         
                         # Check if each date has enough surrounding data
                         for d in dates:
-                            days_before = (d - price_df.index[0]).days
-                            days_after = (price_df.index[-1] - d).days
+                            # Convert to timezone-naive if needed
+                            d_naive = d if not hasattr(d, 'tz') or d.tz is None else d.tz_localize(None)
+                            idx_start = price_df.index[0]
+                            idx_end = price_df.index[-1]
+                            
+                            # Make sure index dates are also timezone-naive
+                            if hasattr(idx_start, 'tz') and idx_start.tz is not None:
+                                idx_start = idx_start.tz_localize(None)
+                            if hasattr(idx_end, 'tz') and idx_end.tz is not None:
+                                idx_end = idx_end.tz_localize(None)
+                            
+                            days_before = (d_naive - idx_start).days
+                            days_after = (idx_end - d_naive).days
                             st.write(f"    {d.strftime('%Y-%m-%d')}: {days_before} days before, {days_after} days after")
             
             # Analyze earnings patterns

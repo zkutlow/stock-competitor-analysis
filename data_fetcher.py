@@ -223,13 +223,14 @@ def get_earnings_dates_in_range(ticker, start_date, end_date):
             if earnings_df['Date'].dt.tz is not None:
                 earnings_df['Date'] = earnings_df['Date'].dt.tz_localize(None)
             
-            # Filter: must be within analysis range
-            mask = (earnings_df['Date'] >= analysis_start) & (earnings_df['Date'] <= analysis_end)
-            filtered = earnings_df[mask]['Date'].tolist()
+            # Convert cutoff dates to pd.Timestamp for proper comparison
+            analysis_start_ts = pd.Timestamp(analysis_start)
+            analysis_end_ts = pd.Timestamp(analysis_end)
+            cutoff_date = pd.Timestamp(today) - timedelta(days=14)
             
-            # Additional filter: must be at least 14 days in the past (extra buffer)
-            today_date = pd.Timestamp(today)
-            filtered = [d for d in filtered if d <= (today_date - timedelta(days=14))]
+            # Filter: must be within analysis range AND in the past
+            mask = (earnings_df['Date'] >= analysis_start_ts) & (earnings_df['Date'] <= analysis_end_ts) & (earnings_df['Date'] <= cutoff_date)
+            filtered = earnings_df[mask]['Date'].tolist()
             
             if filtered:
                 return filtered
@@ -241,6 +242,7 @@ def get_earnings_dates_in_range(ticker, start_date, end_date):
         # Generate quarterly earnings dates
         current_year = analysis_start.year
         end_year = analysis_end.year
+        cutoff_date = today - timedelta(days=14)
         
         # Typical earnings months: Feb (Q4), May (Q1), Aug (Q2), Nov (Q3)
         earnings_months = [2, 5, 8, 11]
@@ -250,7 +252,8 @@ def get_earnings_dates_in_range(ticker, start_date, end_date):
                 # Most companies report around the 5th-15th
                 earnings_date = datetime(year, month, 10)
                 
-                if analysis_start <= earnings_date <= analysis_end:
+                # Only include if in range AND in the past (with buffer)
+                if analysis_start <= earnings_date <= analysis_end and earnings_date <= cutoff_date:
                     dates.append(earnings_date)
         
         return dates if dates else []
@@ -260,6 +263,7 @@ def get_earnings_dates_in_range(ticker, start_date, end_date):
         today = datetime.now()
         analysis_start = start_date + timedelta(days=14)
         analysis_end = min(end_date, today) - timedelta(days=14)
+        cutoff_date = today - timedelta(days=14)
         
         if analysis_start >= analysis_end:
             return []
@@ -273,7 +277,7 @@ def get_earnings_dates_in_range(ticker, start_date, end_date):
         for year in range(current_year, end_year + 1):
             for month in earnings_months:
                 earnings_date = datetime(year, month, 10)
-                if analysis_start <= earnings_date <= analysis_end:
+                if analysis_start <= earnings_date <= analysis_end and earnings_date <= cutoff_date:
                     dates.append(earnings_date)
         
         return dates if dates else []
