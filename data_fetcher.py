@@ -124,19 +124,34 @@ def create_price_dataframe(stock_data_dict):
 @st.cache_data(ttl=86400)  # Cache for 24 hours
 def get_earnings_dates(ticker):
     """
-    Get earnings dates by using quarterly financials data
-    Estimates announcement dates as ~45 days after quarter end
+    Get earnings dates by trying multiple methods
+    Priority: actual history > financials estimate > manual estimate
     
     Args:
         ticker (str): Stock ticker symbol
     
     Returns:
-        pd.DataFrame: DataFrame with estimated earnings announcement dates
+        pd.DataFrame: DataFrame with earnings announcement dates
     """
     try:
         stock = yf.Ticker(ticker)
         
-        # Get quarterly financials - this is more reliable
+        # Method 1: Try get_earnings_history() for actual announcement dates
+        try:
+            earnings_hist = stock.get_earnings_history()
+            if earnings_hist is not None and not earnings_hist.empty:
+                # This method returns actual earnings announcement data
+                if 'startdatetime' in earnings_hist.columns:
+                    dates = pd.to_datetime(earnings_hist['startdatetime'], utc=True)
+                    dates = dates.dt.tz_localize(None)  # Remove timezone
+                    return pd.DataFrame({'Date': dates.dropna()})
+                elif 'Earnings Date' in earnings_hist.columns:
+                    dates = pd.to_datetime(earnings_hist['Earnings Date'])
+                    return pd.DataFrame({'Date': dates.dropna()})
+        except Exception as e:
+            pass
+        
+        # Method 2: Get quarterly financials and estimate
         try:
             quarterly_financials = stock.quarterly_financials
             if quarterly_financials is not None and not quarterly_financials.empty:
@@ -151,7 +166,7 @@ def get_earnings_dates(ticker):
         except:
             pass
         
-        # Alternative: Try quarterly earnings
+        # Method 3: Try quarterly earnings
         try:
             quarterly_earnings = stock.quarterly_earnings
             if quarterly_earnings is not None and not quarterly_earnings.empty:
@@ -162,16 +177,6 @@ def get_earnings_dates(ticker):
                 announcement_dates = [qdate + timedelta(days=45) for qdate in quarter_dates]
                 
                 return pd.DataFrame({'Date': announcement_dates})
-        except:
-            pass
-        
-        # Last resort: get earnings history
-        try:
-            earnings_hist = stock.earnings_history
-            if earnings_hist is not None and not earnings_hist.empty:
-                if 'Earnings Date' in earnings_hist.columns:
-                    dates = pd.to_datetime(earnings_hist['Earnings Date'])
-                    return pd.DataFrame({'Date': dates.dropna()})
         except:
             pass
         

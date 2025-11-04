@@ -536,6 +536,7 @@ def main():
             # Show earnings count
             total_earnings = sum(len(dates) for dates in earnings_dict.values())
             st.success(f"📊 Generated **{total_earnings}** estimated earnings dates across **{len(earnings_dict)}** stocks")
+            st.info("💡 **Note:** Earnings dates are estimated from quarterly financial reports (~45 days after quarter end). These may not match exact announcement dates but provide good approximations for analysis.")
             
             # Analyze earnings patterns
             earnings_df = analyze_earnings_patterns(price_df, earnings_dict)
