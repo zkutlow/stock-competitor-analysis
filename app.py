@@ -13,7 +13,8 @@ import numpy as np
 from data_fetcher import (
     fetch_multiple_stocks,
     create_price_dataframe,
-    get_stock_info
+    get_stock_info,
+    get_earnings_dates_in_range
 )
 from analysis import (
     normalize_prices,
@@ -22,7 +23,8 @@ from analysis import (
     calculate_relative_strength,
     calculate_period_returns,
     calculate_cumulative_returns,
-    calculate_volatility
+    calculate_volatility,
+    analyze_earnings_patterns
 )
 
 # Page configuration
@@ -169,12 +171,13 @@ def main():
     st.success(f"✅ Successfully loaded data for {len(price_df.columns)} stocks from {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}")
     
     # Create tabs for different analyses
-    tab1, tab2, tab3, tab4, tab5 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
         "📊 Overview", 
         "📈 Price Analysis", 
         "🔄 Comparative Performance",
         "📉 Correlation & Volatility",
-        "📋 Detailed Metrics"
+        "📋 Detailed Metrics",
+        "📅 Earnings Analysis"
     ])
     
     # Tab 1: Overview
@@ -504,6 +507,277 @@ def main():
                 
                 worst_drawdown = metrics_df['Max Drawdown (%)'].astype(float).idxmin()
                 st.warning(f"Largest Drawdown: **{worst_drawdown}** ({metrics_df.loc[worst_drawdown, 'Max Drawdown (%)']:.2f}%)")
+    
+    # Tab 6: Earnings Analysis
+    with tab6:
+        st.header("📅 Earnings Analysis")
+        st.caption("Analyze stock price movements before and after earnings announcements")
+        
+        # Fetch earnings dates for all stocks
+        with st.spinner("Fetching earnings dates..."):
+            earnings_dict = {}
+            stocks_to_analyze = [ticker for ticker in all_tickers if ticker not in indices]
+            
+            for ticker in stocks_to_analyze:
+                earnings_dates = get_earnings_dates_in_range(ticker, start_date, end_date)
+                if earnings_dates:
+                    earnings_dict[ticker] = earnings_dates
+        
+        if not earnings_dict:
+            st.warning("⚠️ No earnings data available for the selected date range. Try a longer time period (e.g., 1-2 years).")
+        else:
+            # Show earnings count
+            total_earnings = sum(len(dates) for dates in earnings_dict.values())
+            st.info(f"📊 Found **{total_earnings}** earnings announcements across **{len(earnings_dict)}** stocks")
+            
+            # Analyze earnings patterns
+            earnings_df = analyze_earnings_patterns(price_df, earnings_dict)
+            
+            if earnings_df.empty:
+                st.warning("⚠️ Could not calculate earnings movements. Data may be incomplete.")
+            else:
+                # Display detailed earnings table
+                st.subheader("📋 Earnings Movement Details")
+                
+                # Format the dataframe for display
+                display_df = earnings_df.copy()
+                display_df['Earnings Date'] = pd.to_datetime(display_df['Earnings Date']).dt.strftime('%Y-%m-%d')
+                
+                # Style the dataframe
+                styled_earnings = display_df.style.format({
+                    'Week Before (%)': '{:.2f}%',
+                    'Day Of (%)': '{:.2f}%',
+                    'Week After (%)': '{:.2f}%',
+                    'Price Before': '${:.2f}',
+                    'Price at Earnings': '${:.2f}',
+                    'Price After': '${:.2f}'
+                }).background_gradient(
+                    subset=['Week Before (%)', 'Day Of (%)', 'Week After (%)'],
+                    cmap='RdYlGn',
+                    vmin=-10,
+                    vmax=10
+                )
+                
+                st.dataframe(styled_earnings, use_container_width=True)
+                
+                st.divider()
+                
+                # 2x2 Scatter Plot: Before vs After Movement
+                st.subheader("📊 Pre/Post Earnings Movement Scatter Plot")
+                st.caption("Each dot represents one earnings announcement. Quadrants show different patterns:")
+                
+                col1, col2 = st.columns([3, 1])
+                
+                with col1:
+                    # Create scatter plot
+                    fig_scatter = go.Figure()
+                    
+                    colors_map = {}
+                    color_idx = 0
+                    colors = px.colors.qualitative.Set2
+                    
+                    for ticker in earnings_df['Ticker'].unique():
+                        if ticker not in colors_map:
+                            colors_map[ticker] = colors[color_idx % len(colors)]
+                            color_idx += 1
+                        
+                        ticker_data = earnings_df[earnings_df['Ticker'] == ticker]
+                        
+                        fig_scatter.add_trace(go.Scatter(
+                            x=ticker_data['Week Before (%)'],
+                            y=ticker_data['Week After (%)'],
+                            mode='markers',
+                            name=ticker,
+                            marker=dict(
+                                size=12,
+                                color=colors_map[ticker],
+                                line=dict(width=1, color='white')
+                            ),
+                            text=ticker_data['Earnings Date'].astype(str),
+                            hovertemplate='<b>%{fullData.name}</b><br>' +
+                                        'Date: %{text}<br>' +
+                                        'Week Before: %{x:.2f}%<br>' +
+                                        'Week After: %{y:.2f}%<br>' +
+                                        '<extra></extra>'
+                        ))
+                    
+                    # Add quadrant lines
+                    fig_scatter.add_hline(y=0, line_dash="dash", line_color="gray", line_width=1)
+                    fig_scatter.add_vline(x=0, line_dash="dash", line_color="gray", line_width=1)
+                    
+                    # Add quadrant labels
+                    max_x = earnings_df['Week Before (%)'].abs().max() * 1.1
+                    max_y = earnings_df['Week After (%)'].abs().max() * 1.1
+                    
+                    fig_scatter.add_annotation(
+                        x=max_x * 0.7, y=max_y * 0.7,
+                        text="📈 Rally & Continue",
+                        showarrow=False,
+                        font=dict(size=10, color="gray"),
+                        opacity=0.5
+                    )
+                    fig_scatter.add_annotation(
+                        x=-max_x * 0.7, y=max_y * 0.7,
+                        text="📉➡️📈 Reversal Up",
+                        showarrow=False,
+                        font=dict(size=10, color="gray"),
+                        opacity=0.5
+                    )
+                    fig_scatter.add_annotation(
+                        x=-max_x * 0.7, y=-max_y * 0.7,
+                        text="📉 Decline & Continue",
+                        showarrow=False,
+                        font=dict(size=10, color="gray"),
+                        opacity=0.5
+                    )
+                    fig_scatter.add_annotation(
+                        x=max_x * 0.7, y=-max_y * 0.7,
+                        text="📈➡️📉 Reversal Down",
+                        showarrow=False,
+                        font=dict(size=10, color="gray"),
+                        opacity=0.5
+                    )
+                    
+                    fig_scatter.update_layout(
+                        xaxis_title="Week Before Earnings (%)",
+                        yaxis_title="Week After Earnings (%)",
+                        hovermode='closest',
+                        height=600,
+                        legend=dict(
+                            orientation="v",
+                            yanchor="top",
+                            y=1,
+                            xanchor="left",
+                            x=1.02
+                        )
+                    )
+                    
+                    st.plotly_chart(fig_scatter, use_container_width=True)
+                
+                with col2:
+                    st.markdown("**📍 Quadrant Guide**")
+                    st.markdown("""
+                    **Top-Right (🟢)**  
+                    Rally before AND after
+                    
+                    **Top-Left (🔵)**  
+                    Drop before, rally after  
+                    (Buy the dip)
+                    
+                    **Bottom-Left (🔴)**  
+                    Drop before AND after
+                    
+                    **Bottom-Right (🟠)**  
+                    Rally before, drop after  
+                    (Sell the news)
+                    """)
+                
+                st.divider()
+                
+                # Movement over time
+                st.subheader("📈 Earnings Movement Trends Over Time")
+                
+                # Create timeline chart
+                fig_timeline = go.Figure()
+                
+                for ticker in earnings_df['Ticker'].unique():
+                    ticker_data = earnings_df[earnings_df['Ticker'] == ticker].sort_values('Earnings Date')
+                    
+                    # Week Before
+                    fig_timeline.add_trace(go.Scatter(
+                        x=ticker_data['Earnings Date'],
+                        y=ticker_data['Week Before (%)'],
+                        mode='lines+markers',
+                        name=f"{ticker} - Before",
+                        line=dict(dash='dash'),
+                        marker=dict(size=8),
+                        hovertemplate='<b>%{fullData.name}</b><br>' +
+                                    'Date: %{x|%Y-%m-%d}<br>' +
+                                    'Movement: %{y:.2f}%<br>' +
+                                    '<extra></extra>'
+                    ))
+                    
+                    # Week After
+                    fig_timeline.add_trace(go.Scatter(
+                        x=ticker_data['Earnings Date'],
+                        y=ticker_data['Week After (%)'],
+                        mode='lines+markers',
+                        name=f"{ticker} - After",
+                        line=dict(dash='solid'),
+                        marker=dict(size=8),
+                        hovertemplate='<b>%{fullData.name}</b><br>' +
+                                    'Date: %{x|%Y-%m-%d}<br>' +
+                                    'Movement: %{y:.2f}%<br>' +
+                                    '<extra></extra>'
+                    ))
+                
+                fig_timeline.add_hline(y=0, line_dash="dash", line_color="gray", line_width=1)
+                
+                fig_timeline.update_layout(
+                    xaxis_title="Earnings Date",
+                    yaxis_title="Price Movement (%)",
+                    hovermode='x unified',
+                    height=500,
+                    legend=dict(
+                        orientation="h",
+                        yanchor="bottom",
+                        y=1.02,
+                        xanchor="right",
+                        x=1
+                    )
+                )
+                
+                st.plotly_chart(fig_timeline, use_container_width=True)
+                
+                st.divider()
+                
+                # Summary statistics by ticker
+                st.subheader("📊 Average Earnings Movements by Stock")
+                
+                summary_stats = earnings_df.groupby('Ticker').agg({
+                    'Week Before (%)': ['mean', 'std', 'count'],
+                    'Week After (%)': ['mean', 'std'],
+                    'Day Of (%)': ['mean', 'std']
+                }).round(2)
+                
+                summary_stats.columns = [
+                    'Avg Week Before (%)', 'Std Week Before (%)', 'Count',
+                    'Avg Week After (%)', 'Std Week After (%)',
+                    'Avg Day Of (%)', 'Std Day Of (%)'
+                ]
+                
+                st.dataframe(
+                    summary_stats.style.background_gradient(
+                        subset=['Avg Week Before (%)', 'Avg Week After (%)', 'Avg Day Of (%)'],
+                        cmap='RdYlGn',
+                        vmin=-5,
+                        vmax=5
+                    ),
+                    use_container_width=True
+                )
+                
+                # Key insights
+                st.subheader("💡 Key Insights")
+                
+                col1, col2, col3 = st.columns(3)
+                
+                with col1:
+                    st.markdown("**📈 Best Pre-Earnings Performance**")
+                    best_before = summary_stats['Avg Week Before (%)'].idxmax()
+                    best_before_val = summary_stats.loc[best_before, 'Avg Week Before (%)']
+                    st.success(f"**{best_before}**: {best_before_val:.2f}% avg")
+                
+                with col2:
+                    st.markdown("**🎯 Best Post-Earnings Performance**")
+                    best_after = summary_stats['Avg Week After (%)'].idxmax()
+                    best_after_val = summary_stats.loc[best_after, 'Avg Week After (%)']
+                    st.success(f"**{best_after}**: {best_after_val:.2f}% avg")
+                
+                with col3:
+                    st.markdown("**📊 Most Earnings Reported**")
+                    most_earnings = summary_stats['Count'].idxmax()
+                    most_earnings_count = int(summary_stats.loc[most_earnings, 'Count'])
+                    st.info(f"**{most_earnings}**: {most_earnings_count} reports")
     
     # Footer
     st.divider()

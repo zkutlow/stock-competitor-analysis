@@ -120,3 +120,58 @@ def create_price_dataframe(stock_data_dict):
     
     return price_df
 
+
+@st.cache_data(ttl=86400)  # Cache for 24 hours
+def get_earnings_dates(ticker):
+    """
+    Get earnings dates for a stock
+    
+    Args:
+        ticker (str): Stock ticker symbol
+    
+    Returns:
+        pd.DataFrame: DataFrame with earnings dates and info
+    """
+    try:
+        stock = yf.Ticker(ticker)
+        earnings_dates = stock.earnings_dates
+        
+        if earnings_dates is not None and not earnings_dates.empty:
+            # Reset index to make date a column
+            earnings_dates = earnings_dates.reset_index()
+            earnings_dates.columns = ['Date'] + list(earnings_dates.columns[1:])
+            return earnings_dates
+        else:
+            return None
+    except Exception as e:
+        st.warning(f"Could not fetch earnings dates for {ticker}: {str(e)}")
+        return None
+
+
+def get_earnings_dates_in_range(ticker, start_date, end_date):
+    """
+    Get earnings dates within a specific date range
+    
+    Args:
+        ticker (str): Stock ticker symbol
+        start_date (datetime): Start date
+        end_date (datetime): End date
+    
+    Returns:
+        list: List of earnings dates as datetime objects
+    """
+    try:
+        earnings_df = get_earnings_dates(ticker)
+        
+        if earnings_df is None or earnings_df.empty:
+            return []
+        
+        # Filter to date range
+        earnings_df['Date'] = pd.to_datetime(earnings_df['Date'])
+        mask = (earnings_df['Date'] >= start_date) & (earnings_df['Date'] <= end_date)
+        filtered = earnings_df[mask]['Date'].tolist()
+        
+        return filtered
+    except Exception as e:
+        return []
+

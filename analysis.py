@@ -271,3 +271,100 @@ def calculate_period_returns(price_df):
     
     return pd.DataFrame(period_returns).T
 
+
+def calculate_earnings_movement(price_series, earnings_date, days_before=7, days_after=7):
+    """
+    Calculate price movement before and after an earnings date
+    
+    Args:
+        price_series (pd.Series): Series of stock prices
+        earnings_date (datetime): Earnings announcement date
+        days_before (int): Number of trading days before earnings to measure
+        days_after (int): Number of trading days after earnings to measure
+    
+    Returns:
+        dict: Dictionary with before/after movements and prices
+    """
+    try:
+        # Convert earnings_date to timezone-naive if needed
+        if hasattr(earnings_date, 'tz') and earnings_date.tz is not None:
+            earnings_date = earnings_date.tz_localize(None)
+        
+        # Find the closest date in our price data
+        closest_idx = price_series.index.get_indexer([earnings_date], method='nearest')[0]
+        
+        if closest_idx < 0 or closest_idx >= len(price_series):
+            return None
+        
+        earnings_date_actual = price_series.index[closest_idx]
+        
+        # Get indices for before and after periods
+        start_idx = max(0, closest_idx - days_before)
+        end_idx = min(len(price_series) - 1, closest_idx + days_after)
+        
+        # Make sure we have enough data
+        if start_idx >= closest_idx or end_idx <= closest_idx:
+            return None
+        
+        # Calculate movements
+        price_before_start = price_series.iloc[start_idx]
+        price_at_earnings = price_series.iloc[closest_idx]
+        price_after_end = price_series.iloc[end_idx]
+        
+        movement_before = ((price_at_earnings - price_before_start) / price_before_start) * 100
+        movement_after = ((price_after_end - price_at_earnings) / price_at_earnings) * 100
+        movement_day_of = ((price_at_earnings - price_series.iloc[max(0, closest_idx-1)]) / 
+                          price_series.iloc[max(0, closest_idx-1)]) * 100
+        
+        return {
+            'earnings_date': earnings_date_actual,
+            'movement_before': movement_before,
+            'movement_after': movement_after,
+            'movement_day_of': movement_day_of,
+            'price_before': price_before_start,
+            'price_at_earnings': price_at_earnings,
+            'price_after': price_after_end
+        }
+    except Exception as e:
+        return None
+
+
+def analyze_earnings_patterns(price_df, earnings_dates_dict):
+    """
+    Analyze earnings movement patterns for multiple stocks
+    
+    Args:
+        price_df (pd.DataFrame): DataFrame with stock prices
+        earnings_dates_dict (dict): Dictionary of {ticker: [earnings_dates]}
+    
+    Returns:
+        pd.DataFrame: DataFrame with earnings analysis results
+    """
+    results = []
+    
+    for ticker, earnings_dates in earnings_dates_dict.items():
+        if ticker not in price_df.columns:
+            continue
+        
+        price_series = price_df[ticker].dropna()
+        
+        for earnings_date in earnings_dates:
+            movement = calculate_earnings_movement(price_series, earnings_date)
+            
+            if movement:
+                results.append({
+                    'Ticker': ticker,
+                    'Earnings Date': movement['earnings_date'],
+                    'Week Before (%)': movement['movement_before'],
+                    'Day Of (%)': movement['movement_day_of'],
+                    'Week After (%)': movement['movement_after'],
+                    'Price Before': movement['price_before'],
+                    'Price at Earnings': movement['price_at_earnings'],
+                    'Price After': movement['price_after']
+                })
+    
+    if results:
+        return pd.DataFrame(results)
+    else:
+        return pd.DataFrame()
+
