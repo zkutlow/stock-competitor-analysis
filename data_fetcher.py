@@ -199,12 +199,25 @@ def get_earnings_dates_in_range(ticker, start_date, end_date):
         list: List of estimated earnings dates as datetime objects
     """
     try:
+        # Only include earnings dates that have enough surrounding price data
+        # Need at least 7 days before and 7 days after
+        # Also exclude future dates (need data after earnings)
+        today = datetime.now()
+        
+        # Adjust range to ensure we have enough data for analysis
+        analysis_start = start_date + timedelta(days=7)  # Need 7 days before
+        analysis_end = min(end_date, today) - timedelta(days=7)  # Need 7 days after
+        
+        if analysis_start >= analysis_end:
+            # Not enough range for analysis
+            return []
+        
         earnings_df = get_earnings_dates(ticker)
         
         if earnings_df is not None and not earnings_df.empty:
-            # Filter to date range
+            # Filter to date range with buffer for analysis
             earnings_df['Date'] = pd.to_datetime(earnings_df['Date'])
-            mask = (earnings_df['Date'] >= start_date) & (earnings_df['Date'] <= end_date)
+            mask = (earnings_df['Date'] >= analysis_start) & (earnings_df['Date'] <= analysis_end)
             filtered = earnings_df[mask]['Date'].tolist()
             
             if filtered:
@@ -215,8 +228,8 @@ def get_earnings_dates_in_range(ticker, start_date, end_date):
         dates = []
         
         # Generate quarterly earnings dates
-        current_year = start_date.year
-        end_year = end_date.year
+        current_year = analysis_start.year
+        end_year = analysis_end.year
         
         # Typical earnings months: Feb (Q4), May (Q1), Aug (Q2), Nov (Q3)
         earnings_months = [2, 5, 8, 11]
@@ -226,23 +239,30 @@ def get_earnings_dates_in_range(ticker, start_date, end_date):
                 # Most companies report around the 5th-15th
                 earnings_date = datetime(year, month, 10)
                 
-                if start_date <= earnings_date <= end_date:
+                if analysis_start <= earnings_date <= analysis_end:
                     dates.append(earnings_date)
         
         return dates if dates else []
         
     except Exception as e:
-        # Final fallback: standard quarterly dates
+        # Final fallback: standard quarterly dates (excluding future and recent dates)
+        today = datetime.now()
+        analysis_start = start_date + timedelta(days=7)
+        analysis_end = min(end_date, today) - timedelta(days=7)
+        
+        if analysis_start >= analysis_end:
+            return []
+        
         dates = []
-        current_year = start_date.year
-        end_year = end_date.year
+        current_year = analysis_start.year
+        end_year = analysis_end.year
         
         earnings_months = [2, 5, 8, 11]
         
         for year in range(current_year, end_year + 1):
             for month in earnings_months:
                 earnings_date = datetime(year, month, 10)
-                if start_date <= earnings_date <= end_date:
+                if analysis_start <= earnings_date <= analysis_end:
                     dates.append(earnings_date)
         
         return dates if dates else []
