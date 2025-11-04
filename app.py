@@ -518,9 +518,10 @@ def main():
     with tab6:
         st.header("📅 Earnings Analysis")
         st.caption("Analyze stock price movements before and after earnings announcements")
+        st.info("💡 Note: Earnings dates are estimated based on quarterly reporting patterns (typically Feb, May, Aug, Nov) and may be approximate.")
         
         # Fetch earnings dates for all stocks
-        with st.spinner("Fetching earnings dates..."):
+        with st.spinner("Generating earnings calendar..."):
             earnings_dict = {}
             stocks_to_analyze = [ticker for ticker in all_tickers if ticker not in indices]
             
@@ -530,11 +531,11 @@ def main():
                     earnings_dict[ticker] = earnings_dates
         
         if not earnings_dict:
-            st.warning("⚠️ No earnings data available for the selected date range. Try a longer time period (e.g., 1-2 years).")
+            st.warning("⚠️ No earnings data could be generated for the selected date range.")
         else:
             # Show earnings count
             total_earnings = sum(len(dates) for dates in earnings_dict.values())
-            st.info(f"📊 Found **{total_earnings}** earnings announcements across **{len(earnings_dict)}** stocks")
+            st.success(f"📊 Generated **{total_earnings}** estimated earnings dates across **{len(earnings_dict)}** stocks")
             
             # Analyze earnings patterns
             earnings_df = analyze_earnings_patterns(price_df, earnings_dict)
@@ -543,7 +544,7 @@ def main():
                 st.warning("⚠️ Could not calculate earnings movements. Data may be incomplete.")
             else:
                 # Display detailed earnings table
-                st.subheader("📋 Earnings Movement Details")
+                st.subheader("📋 Earnings Movement Details (Estimated Dates)")
                 
                 # Format the dataframe for display
                 display_df = earnings_df.copy()

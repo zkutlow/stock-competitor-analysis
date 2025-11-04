@@ -124,51 +124,54 @@ def create_price_dataframe(stock_data_dict):
 @st.cache_data(ttl=86400)  # Cache for 24 hours
 def get_earnings_dates(ticker):
     """
-    Get earnings dates for a stock using the calendar method
+    Get earnings dates by using quarterly financials data
+    Estimates announcement dates as ~45 days after quarter end
     
     Args:
         ticker (str): Stock ticker symbol
     
     Returns:
-        pd.DataFrame: DataFrame with earnings dates
+        pd.DataFrame: DataFrame with estimated earnings announcement dates
     """
     try:
         stock = yf.Ticker(ticker)
         
-        # Try getting earnings calendar first
+        # Get quarterly financials - this is more reliable
         try:
-            calendar = stock.calendar
-            if calendar is not None and not calendar.empty:
-                # Calendar returns a dataframe with earnings date
-                if 'Earnings Date' in calendar.index:
-                    earnings_date = calendar.loc['Earnings Date']
-                    if pd.notna(earnings_date):
-                        return pd.DataFrame({'Date': [pd.to_datetime(earnings_date)]})
+            quarterly_financials = stock.quarterly_financials
+            if quarterly_financials is not None and not quarterly_financials.empty:
+                # Financials columns are the quarter-end dates
+                quarter_dates = pd.to_datetime(quarterly_financials.columns)
+                
+                # Estimate earnings announcement dates as ~45 days after quarter end
+                # Most companies report 30-45 days after quarter close
+                announcement_dates = [qdate + timedelta(days=45) for qdate in quarter_dates]
+                
+                return pd.DataFrame({'Date': announcement_dates})
         except:
             pass
         
-        # Try quarterly earnings
+        # Alternative: Try quarterly earnings
         try:
-            earnings = stock.quarterly_earnings
-            if earnings is not None and not earnings.empty:
-                # Reset index to get dates
-                earnings_df = earnings.reset_index()
-                if 'Date' in earnings_df.columns or earnings_df.index.name in ['Date', 'date']:
-                    dates = pd.to_datetime(earnings_df.iloc[:, 0])
-                    return pd.DataFrame({'Date': dates})
-                # Sometimes the date is in the index
-                dates = pd.to_datetime(earnings.index)
-                return pd.DataFrame({'Date': dates})
+            quarterly_earnings = stock.quarterly_earnings
+            if quarterly_earnings is not None and not quarterly_earnings.empty:
+                # Get the index which contains quarter dates
+                quarter_dates = pd.to_datetime(quarterly_earnings.index)
+                
+                # Estimate announcement dates
+                announcement_dates = [qdate + timedelta(days=45) for qdate in quarter_dates]
+                
+                return pd.DataFrame({'Date': announcement_dates})
         except:
             pass
         
-        # Try earnings dates (original method)
+        # Last resort: get earnings history
         try:
-            earnings_dates = stock.earnings_dates
-            if earnings_dates is not None and not earnings_dates.empty:
-                earnings_dates = earnings_dates.reset_index()
-                earnings_dates.columns = ['Date'] + list(earnings_dates.columns[1:])
-                return earnings_dates[['Date']]
+            earnings_hist = stock.earnings_history
+            if earnings_hist is not None and not earnings_hist.empty:
+                if 'Earnings Date' in earnings_hist.columns:
+                    dates = pd.to_datetime(earnings_hist['Earnings Date'])
+                    return pd.DataFrame({'Date': dates.dropna()})
         except:
             pass
         
@@ -179,8 +182,8 @@ def get_earnings_dates(ticker):
 
 def get_earnings_dates_in_range(ticker, start_date, end_date):
     """
-    Get earnings dates within a specific date range
-    Estimates quarterly earnings dates if actual dates aren't available
+    Get estimated earnings announcement dates within a date range
+    Uses quarterly financials to estimate when earnings were announced
     
     Args:
         ticker (str): Stock ticker symbol
@@ -188,41 +191,54 @@ def get_earnings_dates_in_range(ticker, start_date, end_date):
         end_date (datetime): End date
     
     Returns:
-        list: List of earnings dates as datetime objects
+        list: List of estimated earnings dates as datetime objects
     """
     try:
         earnings_df = get_earnings_dates(ticker)
         
-        if earnings_df is None or earnings_df.empty:
-            # Fallback: estimate quarterly earnings (roughly every 90 days)
-            # Most companies report ~45 days after quarter end
-            dates = []
-            current = start_date
-            # Start from first potential earnings (roughly mid-quarter)
-            current = current.replace(day=15)
+        if earnings_df is not None and not earnings_df.empty:
+            # Filter to date range
+            earnings_df['Date'] = pd.to_datetime(earnings_df['Date'])
+            mask = (earnings_df['Date'] >= start_date) & (earnings_df['Date'] <= end_date)
+            filtered = earnings_df[mask]['Date'].tolist()
             
-            while current <= end_date:
-                # Add dates approximately when earnings typically occur
-                # (Jan, Apr, Jul, Oct - middle of month after quarter end)
-                if current.month in [1, 4, 7, 10]:
-                    dates.append(current)
-                current = current + timedelta(days=90)
-            
-            return dates if dates else []
+            if filtered:
+                return filtered
         
-        # Filter to date range
-        earnings_df['Date'] = pd.to_datetime(earnings_df['Date'])
-        mask = (earnings_df['Date'] >= start_date) & (earnings_df['Date'] <= end_date)
-        filtered = earnings_df[mask]['Date'].tolist()
-        
-        return filtered
-    except Exception as e:
-        # Return estimated quarterly dates as fallback
+        # Fallback: Generate estimated quarterly earnings dates
+        # Based on typical reporting calendar (Feb, May, Aug, Nov)
         dates = []
-        current = start_date.replace(day=15)
-        while current <= end_date:
-            if current.month in [1, 4, 7, 10]:
-                dates.append(current)
-            current = current + timedelta(days=90)
+        
+        # Generate quarterly earnings dates
+        current_year = start_date.year
+        end_year = end_date.year
+        
+        # Typical earnings months: Feb (Q4), May (Q1), Aug (Q2), Nov (Q3)
+        earnings_months = [2, 5, 8, 11]
+        
+        for year in range(current_year, end_year + 1):
+            for month in earnings_months:
+                # Most companies report around the 5th-15th
+                earnings_date = datetime(year, month, 10)
+                
+                if start_date <= earnings_date <= end_date:
+                    dates.append(earnings_date)
+        
+        return dates if dates else []
+        
+    except Exception as e:
+        # Final fallback: standard quarterly dates
+        dates = []
+        current_year = start_date.year
+        end_year = end_date.year
+        
+        earnings_months = [2, 5, 8, 11]
+        
+        for year in range(current_year, end_year + 1):
+            for month in earnings_months:
+                earnings_date = datetime(year, month, 10)
+                if start_date <= earnings_date <= end_date:
+                    dates.append(earnings_date)
+        
         return dates if dates else []
 
