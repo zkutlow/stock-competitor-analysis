@@ -218,8 +218,18 @@ def get_earnings_dates_in_range(ticker, start_date, end_date):
         if earnings_df is not None and not earnings_df.empty:
             # Filter to date range with buffer for analysis
             earnings_df['Date'] = pd.to_datetime(earnings_df['Date'])
+            
+            # Make sure dates are timezone-naive
+            if earnings_df['Date'].dt.tz is not None:
+                earnings_df['Date'] = earnings_df['Date'].dt.tz_localize(None)
+            
+            # Filter: must be within analysis range
             mask = (earnings_df['Date'] >= analysis_start) & (earnings_df['Date'] <= analysis_end)
             filtered = earnings_df[mask]['Date'].tolist()
+            
+            # Additional filter: must be at least 14 days in the past (extra buffer)
+            today_date = pd.Timestamp(today)
+            filtered = [d for d in filtered if d <= (today_date - timedelta(days=14))]
             
             if filtered:
                 return filtered

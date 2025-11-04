@@ -544,7 +544,14 @@ def main():
                     st.write(f"**{ticker}**: {len(dates)} dates")
                     if dates:
                         st.write(f"  Range: {min(dates).strftime('%Y-%m-%d')} to {max(dates).strftime('%Y-%m-%d')}")
+                        st.write(f"  Dates: {', '.join([d.strftime('%Y-%m-%d') for d in dates])}")
                         st.write(f"  Price data available: {price_df[ticker].notna().sum()} days from {price_df.index[0].strftime('%Y-%m-%d')} to {price_df.index[-1].strftime('%Y-%m-%d')}")
+                        
+                        # Check if each date has enough surrounding data
+                        for d in dates:
+                            days_before = (d - price_df.index[0]).days
+                            days_after = (price_df.index[-1] - d).days
+                            st.write(f"    {d.strftime('%Y-%m-%d')}: {days_before} days before, {days_after} days after")
             
             # Analyze earnings patterns
             earnings_df = analyze_earnings_patterns(price_df, earnings_dict)
