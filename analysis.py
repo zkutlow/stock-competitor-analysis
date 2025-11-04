@@ -6,6 +6,7 @@ Performs various analyses on stock data including returns, correlations, and rel
 import pandas as pd
 import numpy as np
 from scipy import stats
+from datetime import timedelta
 
 
 def calculate_returns(price_df, period='daily'):
@@ -286,35 +287,73 @@ def calculate_earnings_movement(price_series, earnings_date, days_before=7, days
         dict: Dictionary with before/after movements and prices
     """
     try:
+        # Ensure we have enough data
+        if len(price_series) < (days_before + days_after + 2):
+            return None
+        
         # Convert earnings_date to timezone-naive if needed
         if hasattr(earnings_date, 'tz') and earnings_date.tz is not None:
             earnings_date = earnings_date.tz_localize(None)
         
-        # Find the closest date in our price data
-        closest_idx = price_series.index.get_indexer([earnings_date], method='nearest')[0]
+        # Convert to datetime if it's a Timestamp
+        if isinstance(earnings_date, pd.Timestamp):
+            earnings_date = earnings_date.to_pydatetime()
         
-        if closest_idx < 0 or closest_idx >= len(price_series):
+        # Make sure price_series index is datetime
+        if not isinstance(price_series.index, pd.DatetimeIndex):
+            price_series.index = pd.to_datetime(price_series.index)
+        
+        # Find the closest trading day to the earnings date
+        # Look within a reasonable window (±30 days) to avoid matching to far-off dates
+        window_start = earnings_date - timedelta(days=30)
+        window_end = earnings_date + timedelta(days=30)
+        
+        # Filter to window
+        window_mask = (price_series.index >= window_start) & (price_series.index <= window_end)
+        window_prices = price_series[window_mask]
+        
+        if len(window_prices) < (days_before + days_after + 2):
             return None
         
-        earnings_date_actual = price_series.index[closest_idx]
+        # Find closest date within window
+        closest_idx_in_window = window_prices.index.get_indexer([earnings_date], method='nearest')[0]
+        if closest_idx_in_window < 0:
+            return None
+        
+        earnings_date_actual = window_prices.index[closest_idx_in_window]
+        
+        # Get the position in the full price series
+        closest_idx = price_series.index.get_loc(earnings_date_actual)
+        
+        # Make sure we have enough data before and after
+        if closest_idx < days_before or closest_idx >= (len(price_series) - days_after):
+            return None
         
         # Get indices for before and after periods
-        start_idx = max(0, closest_idx - days_before)
-        end_idx = min(len(price_series) - 1, closest_idx + days_after)
-        
-        # Make sure we have enough data
-        if start_idx >= closest_idx or end_idx <= closest_idx:
-            return None
+        start_idx = closest_idx - days_before
+        end_idx = closest_idx + days_after
         
         # Calculate movements
         price_before_start = price_series.iloc[start_idx]
         price_at_earnings = price_series.iloc[closest_idx]
         price_after_end = price_series.iloc[end_idx]
         
+        # Handle zero division
+        if price_before_start == 0 or price_at_earnings == 0:
+            return None
+        
         movement_before = ((price_at_earnings - price_before_start) / price_before_start) * 100
         movement_after = ((price_after_end - price_at_earnings) / price_at_earnings) * 100
-        movement_day_of = ((price_at_earnings - price_series.iloc[max(0, closest_idx-1)]) / 
-                          price_series.iloc[max(0, closest_idx-1)]) * 100
+        
+        # Day of movement
+        if closest_idx > 0:
+            price_prev_day = price_series.iloc[closest_idx - 1]
+            if price_prev_day > 0:
+                movement_day_of = ((price_at_earnings - price_prev_day) / price_prev_day) * 100
+            else:
+                movement_day_of = 0
+        else:
+            movement_day_of = 0
         
         return {
             'earnings_date': earnings_date_actual,
@@ -326,6 +365,9 @@ def calculate_earnings_movement(price_series, earnings_date, days_before=7, days
             'price_after': price_after_end
         }
     except Exception as e:
+        # Print error for debugging (will show in terminal)
+        import sys
+        print(f"Error calculating earnings movement: {str(e)}", file=sys.stderr)
         return None
 
 
