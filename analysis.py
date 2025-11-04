@@ -290,6 +290,7 @@ def calculate_earnings_movement(price_series, earnings_date, days_before=7, days
     try:
         # Ensure we have enough data
         if len(price_series) < (days_before + days_after + 2):
+            print(f"Price series too short: {len(price_series)} days, need {days_before + days_after + 2}", file=sys.stderr)
             return None
         
         # Convert earnings_date to timezone-naive if needed
@@ -299,6 +300,8 @@ def calculate_earnings_movement(price_series, earnings_date, days_before=7, days
         # Convert to datetime if it's a Timestamp
         if isinstance(earnings_date, pd.Timestamp):
             earnings_date = earnings_date.to_pydatetime()
+        
+        print(f"Processing earnings date: {earnings_date}, price series: {len(price_series)} days", file=sys.stderr)
         
         # Make sure price_series index is datetime
         if not isinstance(price_series.index, pd.DatetimeIndex):
@@ -328,6 +331,7 @@ def calculate_earnings_movement(price_series, earnings_date, days_before=7, days
         
         # Make sure we have enough data before and after
         if closest_idx < days_before or closest_idx >= (len(price_series) - days_after):
+            print(f"Not enough data: idx={closest_idx}, need {days_before} before and {days_after} after, series len={len(price_series)}", file=sys.stderr)
             return None
         
         # Get indices for before and after periods

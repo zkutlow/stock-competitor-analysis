@@ -200,13 +200,14 @@ def get_earnings_dates_in_range(ticker, start_date, end_date):
     """
     try:
         # Only include earnings dates that have enough surrounding price data
-        # Need at least 7 days before and 7 days after
+        # Need at least 7 TRADING days before and after (use 14 calendar days as buffer)
         # Also exclude future dates (need data after earnings)
         today = datetime.now()
         
         # Adjust range to ensure we have enough data for analysis
-        analysis_start = start_date + timedelta(days=7)  # Need 7 days before
-        analysis_end = min(end_date, today) - timedelta(days=7)  # Need 7 days after
+        # Use 14 calendar days to ensure we have 7+ trading days
+        analysis_start = start_date + timedelta(days=14)  # Need 7 trading days before
+        analysis_end = min(end_date, today) - timedelta(days=14)  # Need 7 trading days after
         
         if analysis_start >= analysis_end:
             # Not enough range for analysis
@@ -247,8 +248,8 @@ def get_earnings_dates_in_range(ticker, start_date, end_date):
     except Exception as e:
         # Final fallback: standard quarterly dates (excluding future and recent dates)
         today = datetime.now()
-        analysis_start = start_date + timedelta(days=7)
-        analysis_end = min(end_date, today) - timedelta(days=7)
+        analysis_start = start_date + timedelta(days=14)
+        analysis_end = min(end_date, today) - timedelta(days=14)
         
         if analysis_start >= analysis_end:
             return []
