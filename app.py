@@ -568,8 +568,8 @@ def main():
             earnings_df = analyze_earnings_patterns(price_df, earnings_dict)
             
             if earnings_df.empty:
-                st.warning("⚠️ Could not calculate earnings movements. Data may be incomplete.")
-                st.info("💡 Try selecting a longer date range (e.g., 2-3 years) to ensure there's enough price data around earnings dates.")
+                st.error("⚠️ Could not calculate earnings movements. Check terminal/console for detailed error messages.")
+                st.info("💡 Debug: The earnings dates were generated successfully and have surrounding price data, but the movement calculation is failing. This suggests a date matching or calculation logic issue.")
             else:
                 # Display detailed earnings table
                 st.subheader("📋 Earnings Movement Details (Estimated Dates)")

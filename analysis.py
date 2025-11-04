@@ -303,20 +303,29 @@ def calculate_earnings_movement(price_series, earnings_date, days_before=7, days
         
         print(f"Processing earnings date: {earnings_date}, price series: {len(price_series)} days", file=sys.stderr)
         
-        # Make sure price_series index is datetime
+        # Make sure price_series index is datetime and timezone-naive
         if not isinstance(price_series.index, pd.DatetimeIndex):
             price_series.index = pd.to_datetime(price_series.index)
+        
+        # Remove timezone if present
+        if price_series.index.tz is not None:
+            price_series.index = price_series.index.tz_localize(None)
         
         # Find the closest trading day to the earnings date
         # Look within a reasonable window (±30 days) to avoid matching to far-off dates
         window_start = earnings_date - timedelta(days=30)
         window_end = earnings_date + timedelta(days=30)
         
+        print(f"Looking for date in window: {window_start} to {window_end}", file=sys.stderr)
+        
         # Filter to window
         window_mask = (price_series.index >= window_start) & (price_series.index <= window_end)
         window_prices = price_series[window_mask]
         
+        print(f"Found {len(window_prices)} prices in window", file=sys.stderr)
+        
         if len(window_prices) < (days_before + days_after + 2):
+            print(f"Not enough data in window: {len(window_prices)} < {days_before + days_after + 2}", file=sys.stderr)
             return None
         
         # Find closest date within window
