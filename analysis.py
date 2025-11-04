@@ -7,6 +7,7 @@ import pandas as pd
 import numpy as np
 from scipy import stats
 from datetime import timedelta
+import sys
 
 
 def calculate_returns(price_df, period='daily'):
@@ -366,7 +367,6 @@ def calculate_earnings_movement(price_series, earnings_date, days_before=7, days
         }
     except Exception as e:
         # Print error for debugging (will show in terminal)
-        import sys
         print(f"Error calculating earnings movement: {str(e)}", file=sys.stderr)
         return None
 
@@ -383,27 +383,42 @@ def analyze_earnings_patterns(price_df, earnings_dates_dict):
         pd.DataFrame: DataFrame with earnings analysis results
     """
     results = []
+    failed_count = 0
     
     for ticker, earnings_dates in earnings_dates_dict.items():
         if ticker not in price_df.columns:
+            print(f"Ticker {ticker} not in price data", file=sys.stderr)
             continue
         
         price_series = price_df[ticker].dropna()
         
-        for earnings_date in earnings_dates:
-            movement = calculate_earnings_movement(price_series, earnings_date)
-            
-            if movement:
-                results.append({
-                    'Ticker': ticker,
-                    'Earnings Date': movement['earnings_date'],
-                    'Week Before (%)': movement['movement_before'],
-                    'Day Of (%)': movement['movement_day_of'],
-                    'Week After (%)': movement['movement_after'],
-                    'Price Before': movement['price_before'],
-                    'Price at Earnings': movement['price_at_earnings'],
-                    'Price After': movement['price_after']
-                })
+        if len(price_series) < 20:  # Need at least some data
+            print(f"Insufficient price data for {ticker}: {len(price_series)} days", file=sys.stderr)
+            continue
+        
+        for i, earnings_date in enumerate(earnings_dates):
+            try:
+                movement = calculate_earnings_movement(price_series, earnings_date)
+                
+                if movement:
+                    results.append({
+                        'Ticker': ticker,
+                        'Earnings Date': movement['earnings_date'],
+                        'Week Before (%)': movement['movement_before'],
+                        'Day Of (%)': movement['movement_day_of'],
+                        'Week After (%)': movement['movement_after'],
+                        'Price Before': movement['price_before'],
+                        'Price at Earnings': movement['price_at_earnings'],
+                        'Price After': movement['price_after']
+                    })
+                else:
+                    failed_count += 1
+                    print(f"Failed to calculate movement for {ticker} on {earnings_date}", file=sys.stderr)
+            except Exception as e:
+                failed_count += 1
+                print(f"Error processing {ticker} earnings date {i}: {str(e)}", file=sys.stderr)
+    
+    print(f"Successfully calculated {len(results)} earnings movements, {failed_count} failed", file=sys.stderr)
     
     if results:
         return pd.DataFrame(results)

@@ -538,11 +538,20 @@ def main():
             st.success(f"📊 Generated **{total_earnings}** estimated earnings dates across **{len(earnings_dict)}** stocks")
             st.info("💡 **Note:** Earnings dates are estimated from quarterly financial reports (~45 days after quarter end). These may not match exact announcement dates but provide good approximations for analysis.")
             
+            # Show debug info about what dates were generated
+            with st.expander("🔍 Debug: View Generated Earnings Dates"):
+                for ticker, dates in earnings_dict.items():
+                    st.write(f"**{ticker}**: {len(dates)} dates")
+                    if dates:
+                        st.write(f"  Range: {min(dates).strftime('%Y-%m-%d')} to {max(dates).strftime('%Y-%m-%d')}")
+                        st.write(f"  Price data available: {price_df[ticker].notna().sum()} days from {price_df.index[0].strftime('%Y-%m-%d')} to {price_df.index[-1].strftime('%Y-%m-%d')}")
+            
             # Analyze earnings patterns
             earnings_df = analyze_earnings_patterns(price_df, earnings_dict)
             
             if earnings_df.empty:
                 st.warning("⚠️ Could not calculate earnings movements. Data may be incomplete.")
+                st.info("💡 Try selecting a longer date range (e.g., 2-3 years) to ensure there's enough price data around earnings dates.")
             else:
                 # Display detailed earnings table
                 st.subheader("📋 Earnings Movement Details (Estimated Dates)")
