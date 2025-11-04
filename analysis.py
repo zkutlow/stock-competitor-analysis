@@ -368,3 +368,242 @@ def analyze_earnings_patterns(price_df, earnings_dates_dict):
     else:
         return pd.DataFrame()
 
+
+# Technical Analysis Functions
+
+def calculate_rsi(prices, period=14):
+    """
+    Calculate Relative Strength Index (RSI)
+    
+    Args:
+        prices (pd.Series): Price series
+        period (int): RSI period (default: 14)
+    
+    Returns:
+        pd.Series: RSI values
+    """
+    delta = prices.diff()
+    gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
+    
+    rs = gain / loss
+    rsi = 100 - (100 / (1 + rs))
+    
+    return rsi
+
+
+def calculate_macd(prices, fast=12, slow=26, signal=9):
+    """
+    Calculate MACD (Moving Average Convergence Divergence)
+    
+    Args:
+        prices (pd.Series): Price series
+        fast (int): Fast EMA period
+        slow (int): Slow EMA period
+        signal (int): Signal line period
+    
+    Returns:
+        tuple: (MACD line, Signal line, Histogram)
+    """
+    ema_fast = prices.ewm(span=fast, adjust=False).mean()
+    ema_slow = prices.ewm(span=slow, adjust=False).mean()
+    
+    macd_line = ema_fast - ema_slow
+    signal_line = macd_line.ewm(span=signal, adjust=False).mean()
+    histogram = macd_line - signal_line
+    
+    return macd_line, signal_line, histogram
+
+
+def calculate_bollinger_bands(prices, period=20, std_dev=2):
+    """
+    Calculate Bollinger Bands
+    
+    Args:
+        prices (pd.Series): Price series
+        period (int): Moving average period
+        std_dev (int): Number of standard deviations
+    
+    Returns:
+        tuple: (Upper band, Middle band, Lower band)
+    """
+    middle_band = prices.rolling(window=period).mean()
+    std = prices.rolling(window=period).std()
+    
+    upper_band = middle_band + (std * std_dev)
+    lower_band = middle_band - (std * std_dev)
+    
+    return upper_band, middle_band, lower_band
+
+
+def calculate_moving_averages(prices, periods=[20, 50, 200]):
+    """
+    Calculate multiple simple moving averages
+    
+    Args:
+        prices (pd.Series): Price series
+        periods (list): List of periods for SMAs
+    
+    Returns:
+        dict: Dictionary of {period: SMA series}
+    """
+    smas = {}
+    for period in periods:
+        smas[f'SMA_{period}'] = prices.rolling(window=period).mean()
+    
+    return smas
+
+
+def calculate_stochastic_oscillator(high, low, close, period=14):
+    """
+    Calculate Stochastic Oscillator
+    
+    Args:
+        high (pd.Series): High prices
+        low (pd.Series): Low prices
+        close (pd.Series): Close prices
+        period (int): Lookback period
+    
+    Returns:
+        tuple: (%K, %D)
+    """
+    lowest_low = low.rolling(window=period).min()
+    highest_high = high.rolling(window=period).max()
+    
+    k_percent = 100 * ((close - lowest_low) / (highest_high - lowest_low))
+    d_percent = k_percent.rolling(window=3).mean()
+    
+    return k_percent, d_percent
+
+
+def calculate_atr(high, low, close, period=14):
+    """
+    Calculate Average True Range (ATR)
+    
+    Args:
+        high (pd.Series): High prices
+        low (pd.Series): Low prices
+        close (pd.Series): Close prices
+        period (int): ATR period
+    
+    Returns:
+        pd.Series: ATR values
+    """
+    tr1 = high - low
+    tr2 = abs(high - close.shift())
+    tr3 = abs(low - close.shift())
+    
+    true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+    atr = true_range.rolling(window=period).mean()
+    
+    return atr
+
+
+def calculate_obv(close, volume):
+    """
+    Calculate On-Balance Volume (OBV)
+    
+    Args:
+        close (pd.Series): Close prices
+        volume (pd.Series): Volume
+    
+    Returns:
+        pd.Series: OBV values
+    """
+    obv = (np.sign(close.diff()) * volume).fillna(0).cumsum()
+    return obv
+
+
+def generate_technical_signals(prices, high=None, low=None, volume=None):
+    """
+    Generate buy/sell signals based on technical indicators
+    
+    Args:
+        prices (pd.Series): Close prices
+        high (pd.Series): High prices (optional)
+        low (pd.Series): Low prices (optional)
+        volume (pd.Series): Volume (optional)
+    
+    Returns:
+        dict: Dictionary of signals and indicator values
+    """
+    signals = {}
+    
+    # RSI signals
+    rsi = calculate_rsi(prices)
+    current_rsi = rsi.iloc[-1] if not rsi.empty else None
+    if current_rsi:
+        if current_rsi < 30:
+            signals['RSI_Signal'] = 'Oversold - Potential Buy'
+            signals['RSI_Status'] = 'buy'
+        elif current_rsi > 70:
+            signals['RSI_Signal'] = 'Overbought - Potential Sell'
+            signals['RSI_Status'] = 'sell'
+        else:
+            signals['RSI_Signal'] = 'Neutral'
+            signals['RSI_Status'] = 'neutral'
+        signals['RSI_Value'] = current_rsi
+    
+    # MACD signals
+    macd_line, signal_line, histogram = calculate_macd(prices)
+    if not macd_line.empty and not signal_line.empty:
+        current_macd = macd_line.iloc[-1]
+        current_signal = signal_line.iloc[-1]
+        prev_macd = macd_line.iloc[-2] if len(macd_line) > 1 else None
+        prev_signal = signal_line.iloc[-2] if len(signal_line) > 1 else None
+        
+        if prev_macd is not None and prev_signal is not None:
+            if prev_macd <= prev_signal and current_macd > current_signal:
+                signals['MACD_Signal'] = 'Bullish Crossover - Buy Signal'
+                signals['MACD_Status'] = 'buy'
+            elif prev_macd >= prev_signal and current_macd < current_signal:
+                signals['MACD_Signal'] = 'Bearish Crossover - Sell Signal'
+                signals['MACD_Status'] = 'sell'
+            else:
+                signals['MACD_Signal'] = 'No Crossover'
+                signals['MACD_Status'] = 'neutral'
+        
+        signals['MACD_Value'] = current_macd
+        signals['MACD_Signal_Value'] = current_signal
+    
+    # Moving Average signals
+    sma_20 = prices.rolling(window=20).mean()
+    sma_50 = prices.rolling(window=50).mean()
+    
+    if not sma_20.empty and not sma_50.empty:
+        current_price = prices.iloc[-1]
+        current_sma_20 = sma_20.iloc[-1]
+        current_sma_50 = sma_50.iloc[-1]
+        
+        if current_price > current_sma_20 and current_sma_20 > current_sma_50:
+            signals['MA_Signal'] = 'Strong Uptrend'
+            signals['MA_Status'] = 'buy'
+        elif current_price < current_sma_20 and current_sma_20 < current_sma_50:
+            signals['MA_Signal'] = 'Strong Downtrend'
+            signals['MA_Status'] = 'sell'
+        else:
+            signals['MA_Signal'] = 'Mixed Trend'
+            signals['MA_Status'] = 'neutral'
+    
+    # Bollinger Bands signals
+    upper, middle, lower = calculate_bollinger_bands(prices)
+    if not upper.empty and not lower.empty:
+        current_price = prices.iloc[-1]
+        current_upper = upper.iloc[-1]
+        current_lower = lower.iloc[-1]
+        
+        if current_price <= current_lower:
+            signals['BB_Signal'] = 'Near Lower Band - Potential Buy'
+            signals['BB_Status'] = 'buy'
+        elif current_price >= current_upper:
+            signals['BB_Signal'] = 'Near Upper Band - Potential Sell'
+            signals['BB_Status'] = 'sell'
+        else:
+            signals['BB_Signal'] = 'Within Bands'
+            signals['BB_Status'] = 'neutral'
+        
+        signals['BB_Upper'] = current_upper
+        signals['BB_Middle'] = middle.iloc[-1]
+        signals['BB_Lower'] = current_lower
+    
+    return signals

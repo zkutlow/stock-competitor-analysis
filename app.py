@@ -24,7 +24,12 @@ from analysis import (
     calculate_period_returns,
     calculate_cumulative_returns,
     calculate_volatility,
-    analyze_earnings_patterns
+    analyze_earnings_patterns,
+    calculate_rsi,
+    calculate_macd,
+    calculate_bollinger_bands,
+    calculate_moving_averages,
+    generate_technical_signals
 )
 
 # Page configuration
@@ -68,8 +73,8 @@ def main():
     st.sidebar.title("⚙️ Configuration")
     
     # Default stocks
-    default_competitors = ["DASH", "GRUB", "DIDI"]
-    default_indices = ["^GSPC", "^IXIC"]
+    default_competitors = ["DASH", "CART"]
+    default_indices = ["^GSPC"]
     
     st.sidebar.subheader("Primary Stock")
     primary_stock = st.sidebar.text_input("Primary Stock Ticker", value="UBER")
@@ -171,13 +176,14 @@ def main():
     st.success(f"✅ Successfully loaded data for {len(price_df.columns)} stocks from {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}")
     
     # Create tabs for different analyses
-    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
         "📊 Overview", 
         "📈 Price Analysis", 
         "🔄 Comparative Performance",
         "📉 Correlation & Volatility",
         "📋 Detailed Metrics",
-        "📅 Earnings Analysis"
+        "📅 Earnings Analysis",
+        "🔧 Technical Analysis"
     ])
     
     # Tab 1: Overview
@@ -778,6 +784,340 @@ def main():
                     most_earnings = summary_stats['Count'].idxmax()
                     most_earnings_count = int(summary_stats.loc[most_earnings, 'Count'])
                     st.info(f"**{most_earnings}**: {most_earnings_count} reports")
+    
+    # Tab 7: Technical Analysis
+    with tab7:
+        st.header("🔧 Technical Analysis")
+        st.caption("Analyze technical indicators and trading signals")
+        
+        # Stock selector for technical analysis
+        available_stocks = [ticker for ticker in price_df.columns if ticker not in indices]
+        
+        if not available_stocks:
+            st.warning("No stocks available for technical analysis")
+        else:
+            selected_stock = st.selectbox(
+                "Select Stock for Technical Analysis",
+                options=available_stocks,
+                index=0 if primary_stock not in available_stocks else available_stocks.index(primary_stock)
+            )
+            
+            # Get full stock data for selected stock
+            stock_prices = stock_data[selected_stock]
+            close_prices = stock_prices['Close']
+            high_prices = stock_prices['High']
+            low_prices = stock_prices['Low']
+            volume = stock_prices['Volume']
+            
+            # Generate technical signals
+            signals = generate_technical_signals(close_prices, high_prices, low_prices, volume)
+            
+            # Display signals summary
+            st.subheader(f"📊 {selected_stock} - Current Signals")
+            
+            col1, col2, col3, col4 = st.columns(4)
+            
+            with col1:
+                st.markdown("**RSI Indicator**")
+                if 'RSI_Value' in signals:
+                    status_color = "🟢" if signals['RSI_Status'] == 'buy' else "🔴" if signals['RSI_Status'] == 'sell' else "🟡"
+                    st.metric("RSI", f"{signals['RSI_Value']:.2f}", signals['RSI_Signal'])
+                    st.markdown(f"{status_color} {signals['RSI_Signal']}")
+            
+            with col2:
+                st.markdown("**MACD Indicator**")
+                if 'MACD_Value' in signals:
+                    status_color = "🟢" if signals['MACD_Status'] == 'buy' else "🔴" if signals['MACD_Status'] == 'sell' else "🟡"
+                    st.metric("MACD", f"{signals['MACD_Value']:.4f}")
+                    st.markdown(f"{status_color} {signals['MACD_Signal']}")
+            
+            with col3:
+                st.markdown("**Moving Averages**")
+                if 'MA_Signal' in signals:
+                    status_color = "🟢" if signals['MA_Status'] == 'buy' else "🔴" if signals['MA_Status'] == 'sell' else "🟡"
+                    st.markdown(f"**{signals['MA_Signal']}**")
+                    st.markdown(f"{status_color} {signals['MA_Signal']}")
+            
+            with col4:
+                st.markdown("**Bollinger Bands**")
+                if 'BB_Signal' in signals:
+                    status_color = "🟢" if signals['BB_Status'] == 'buy' else "🔴" if signals['BB_Status'] == 'sell' else "🟡"
+                    st.markdown(f"**Current Position**")
+                    st.markdown(f"{status_color} {signals['BB_Signal']}")
+            
+            st.divider()
+            
+            # RSI Chart
+            st.subheader("📈 Relative Strength Index (RSI)")
+            st.caption("RSI measures momentum: < 30 = Oversold (potential buy), > 70 = Overbought (potential sell)")
+            
+            rsi = calculate_rsi(close_prices)
+            
+            fig_rsi = go.Figure()
+            
+            fig_rsi.add_trace(go.Scatter(
+                x=rsi.index,
+                y=rsi,
+                mode='lines',
+                name='RSI',
+                line=dict(color='blue', width=2)
+            ))
+            
+            # Add reference lines
+            fig_rsi.add_hline(y=70, line_dash="dash", line_color="red", annotation_text="Overbought (70)")
+            fig_rsi.add_hline(y=30, line_dash="dash", line_color="green", annotation_text="Oversold (30)")
+            fig_rsi.add_hline(y=50, line_dash="dot", line_color="gray", annotation_text="Neutral (50)")
+            
+            fig_rsi.update_layout(
+                xaxis_title="Date",
+                yaxis_title="RSI",
+                hovermode='x unified',
+                height=400,
+                yaxis_range=[0, 100]
+            )
+            
+            st.plotly_chart(fig_rsi, use_container_width=True)
+            
+            st.divider()
+            
+            # MACD Chart
+            st.subheader("📊 MACD (Moving Average Convergence Divergence)")
+            st.caption("MACD shows trend momentum: Bullish when MACD crosses above signal, Bearish when crosses below")
+            
+            macd_line, signal_line, histogram = calculate_macd(close_prices)
+            
+            fig_macd = go.Figure()
+            
+            fig_macd.add_trace(go.Scatter(
+                x=macd_line.index,
+                y=macd_line,
+                mode='lines',
+                name='MACD',
+                line=dict(color='blue', width=2)
+            ))
+            
+            fig_macd.add_trace(go.Scatter(
+                x=signal_line.index,
+                y=signal_line,
+                mode='lines',
+                name='Signal',
+                line=dict(color='red', width=2)
+            ))
+            
+            # Add histogram
+            colors = ['green' if val >= 0 else 'red' for val in histogram]
+            fig_macd.add_trace(go.Bar(
+                x=histogram.index,
+                y=histogram,
+                name='Histogram',
+                marker_color=colors,
+                opacity=0.3
+            ))
+            
+            fig_macd.add_hline(y=0, line_dash="dash", line_color="gray")
+            
+            fig_macd.update_layout(
+                xaxis_title="Date",
+                yaxis_title="MACD Value",
+                hovermode='x unified',
+                height=400
+            )
+            
+            st.plotly_chart(fig_macd, use_container_width=True)
+            
+            st.divider()
+            
+            # Bollinger Bands with Price
+            st.subheader("📉 Bollinger Bands")
+            st.caption("Price touching lower band may signal oversold, upper band may signal overbought")
+            
+            upper, middle, lower = calculate_bollinger_bands(close_prices)
+            
+            fig_bb = go.Figure()
+            
+            # Add Bollinger Bands
+            fig_bb.add_trace(go.Scatter(
+                x=upper.index,
+                y=upper,
+                mode='lines',
+                name='Upper Band',
+                line=dict(color='red', width=1, dash='dash')
+            ))
+            
+            fig_bb.add_trace(go.Scatter(
+                x=middle.index,
+                y=middle,
+                mode='lines',
+                name='Middle Band (SMA 20)',
+                line=dict(color='blue', width=2)
+            ))
+            
+            fig_bb.add_trace(go.Scatter(
+                x=lower.index,
+                y=lower,
+                mode='lines',
+                name='Lower Band',
+                line=dict(color='green', width=1, dash='dash'),
+                fill='tonexty',
+                fillcolor='rgba(0,100,255,0.1)'
+            ))
+            
+            # Add price
+            fig_bb.add_trace(go.Scatter(
+                x=close_prices.index,
+                y=close_prices,
+                mode='lines',
+                name='Close Price',
+                line=dict(color='black', width=2)
+            ))
+            
+            fig_bb.update_layout(
+                xaxis_title="Date",
+                yaxis_title="Price ($)",
+                hovermode='x unified',
+                height=500
+            )
+            
+            st.plotly_chart(fig_bb, use_container_width=True)
+            
+            st.divider()
+            
+            # Moving Averages Chart
+            st.subheader("📈 Moving Averages")
+            st.caption("Compare price to key moving averages (20, 50, 200 day)")
+            
+            smas = calculate_moving_averages(close_prices, periods=[20, 50, 200])
+            
+            fig_ma = go.Figure()
+            
+            # Add price
+            fig_ma.add_trace(go.Scatter(
+                x=close_prices.index,
+                y=close_prices,
+                mode='lines',
+                name='Close Price',
+                line=dict(color='black', width=2)
+            ))
+            
+            # Add moving averages
+            colors_ma = {'SMA_20': 'blue', 'SMA_50': 'orange', 'SMA_200': 'red'}
+            for sma_name, sma_values in smas.items():
+                fig_ma.add_trace(go.Scatter(
+                    x=sma_values.index,
+                    y=sma_values,
+                    mode='lines',
+                    name=sma_name,
+                    line=dict(color=colors_ma[sma_name], width=2)
+                ))
+            
+            fig_ma.update_layout(
+                xaxis_title="Date",
+                yaxis_title="Price ($)",
+                hovermode='x unified',
+                height=500
+            )
+            
+            st.plotly_chart(fig_ma, use_container_width=True)
+            
+            st.divider()
+            
+            # Volume Analysis
+            st.subheader("📊 Volume Analysis")
+            
+            fig_volume = go.Figure()
+            
+            # Color volume bars based on price movement
+            price_change = close_prices.diff()
+            volume_colors = ['green' if change >= 0 else 'red' for change in price_change]
+            
+            fig_volume.add_trace(go.Bar(
+                x=volume.index,
+                y=volume,
+                name='Volume',
+                marker_color=volume_colors,
+                opacity=0.7
+            ))
+            
+            # Add volume moving average
+            volume_ma = volume.rolling(window=20).mean()
+            fig_volume.add_trace(go.Scatter(
+                x=volume_ma.index,
+                y=volume_ma,
+                mode='lines',
+                name='Volume MA (20)',
+                line=dict(color='blue', width=2)
+            ))
+            
+            fig_volume.update_layout(
+                xaxis_title="Date",
+                yaxis_title="Volume",
+                hovermode='x unified',
+                height=400
+            )
+            
+            st.plotly_chart(fig_volume, use_container_width=True)
+            
+            st.divider()
+            
+            # Technical Summary Table
+            st.subheader("📋 Technical Indicators Summary")
+            
+            # Calculate current values
+            current_price = close_prices.iloc[-1]
+            current_rsi = rsi.iloc[-1] if not rsi.empty else None
+            current_macd = macd_line.iloc[-1] if not macd_line.empty else None
+            current_signal = signal_line.iloc[-1] if not signal_line.empty else None
+            
+            summary_data = {
+                'Indicator': ['Current Price', 'RSI (14)', 'MACD', 'Signal Line', 'SMA 20', 'SMA 50', 'SMA 200', 
+                             'Upper BB', 'Lower BB', 'Volume (Avg 20d)'],
+                'Value': [
+                    f"${current_price:.2f}",
+                    f"{current_rsi:.2f}" if current_rsi else "N/A",
+                    f"{current_macd:.4f}" if current_macd else "N/A",
+                    f"{current_signal:.4f}" if current_signal else "N/A",
+                    f"${smas['SMA_20'].iloc[-1]:.2f}" if not smas['SMA_20'].empty else "N/A",
+                    f"${smas['SMA_50'].iloc[-1]:.2f}" if not smas['SMA_50'].empty else "N/A",
+                    f"${smas['SMA_200'].iloc[-1]:.2f}" if not smas['SMA_200'].empty else "N/A",
+                    f"${upper.iloc[-1]:.2f}" if not upper.empty else "N/A",
+                    f"${lower.iloc[-1]:.2f}" if not lower.empty else "N/A",
+                    f"{volume.rolling(20).mean().iloc[-1]:,.0f}" if not volume.empty else "N/A"
+                ]
+            }
+            
+            summary_df = pd.DataFrame(summary_data)
+            st.dataframe(summary_df, use_container_width=True, hide_index=True)
+            
+            # Trading recommendation
+            st.subheader("💡 Overall Technical Signal")
+            
+            # Count buy/sell/neutral signals
+            buy_signals = sum(1 for key in signals if key.endswith('_Status') and signals[key] == 'buy')
+            sell_signals = sum(1 for key in signals if key.endswith('_Status') and signals[key] == 'sell')
+            neutral_signals = sum(1 for key in signals if key.endswith('_Status') and signals[key] == 'neutral')
+            
+            total_signals = buy_signals + sell_signals + neutral_signals
+            
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                st.metric("Buy Signals", f"{buy_signals}/{total_signals}")
+            
+            with col2:
+                st.metric("Sell Signals", f"{sell_signals}/{total_signals}")
+            
+            with col3:
+                st.metric("Neutral Signals", f"{neutral_signals}/{total_signals}")
+            
+            # Overall recommendation
+            if buy_signals > sell_signals:
+                st.success(f"🟢 **Overall Signal: BULLISH** - {buy_signals} buy signals vs {sell_signals} sell signals")
+            elif sell_signals > buy_signals:
+                st.error(f"🔴 **Overall Signal: BEARISH** - {sell_signals} sell signals vs {buy_signals} buy signals")
+            else:
+                st.info(f"🟡 **Overall Signal: NEUTRAL** - Mixed signals, {buy_signals} buy / {sell_signals} sell")
+            
+            st.caption("⚠️ This is for educational purposes only. Not financial advice. Always do your own research.")
     
     # Footer
     st.divider()
